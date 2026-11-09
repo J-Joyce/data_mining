@@ -254,6 +254,11 @@ def phi_build_tree(df, node, group, level):
 def safe_dev(num, den):
     return num / den if den != 0 else 0
 
+# give tp, fp, tn, fn
+# return all required stats
+def evaluate(tp, fp, tn, fn):
+    pass
+
 # printing all the stats
 def print_stats(f_stats, phi_stats):
     # calculate stats for f trees
@@ -280,8 +285,8 @@ def print_stats(f_stats, phi_stats):
     "Specificity": specificity,
     "Precision": precision,
     "Miss Rate": miss_rate,
-    "FDR": false_discovery_rate,
-    "FOR": false_omission_rate
+    "False Discovery Rate": false_discovery_rate,
+    "False Omission Rate": false_omission_rate
     }
 
     # calculate stats for phi trees
@@ -308,8 +313,8 @@ def print_stats(f_stats, phi_stats):
     "Specificity": specificity,
     "Precision": precision,
     "Miss Rate": miss_rate,
-    "FDR": false_discovery_rate,
-    "FOR": false_omission_rate
+    "False Discovery Rate": false_discovery_rate,
+    "False Omission Rate": false_omission_rate
     }
     # printing everything
     print(f"{'Metric':<20} {'F Tree':<10} {'Phi Tree':<10}")
