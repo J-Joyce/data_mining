@@ -1,16 +1,17 @@
 import pandas as pd
 import numpy as np
+import math
 import random
 
 class Node:
     #creating and storing info for tree
-    def __init__(self, name, mutation = None):
+    def __init__(self, name, mutation = None, past_mutations = []):
         self.name = name
         self.mutation = mutation
         self.split = None
         self.leaf_lable = None
         self.children = []
-        self.past_mutations = []
+        self.past_mutations = past_mutations
         self.samples = []
         self.samples_name = []
 
@@ -113,13 +114,15 @@ def cal_phi(df, group, past_mutations):
 
 # calculate the gain value
 # return the best mutation for H(t) value
-def cal_H(df, group, past_mutations):
+def cal_H(df, group, past_mutations, mutations = []):
     #only looking for mutations in the group
     test_group = df.loc[group]
     #getting those who have cancer and the mutations to run through to calculate phi
     has_cancer = test_group.iloc[:, 0].astype(str).str.startswith("C").to_numpy()
     not_cancer = ~has_cancer
-    mutations = test_group.columns[1:]
+    # allows this functions to either pick from all mutations or a given amount
+    if mutations == []:
+        mutations = test_group.columns[1:]
     mutations = [m for m in mutations if m not in past_mutations]
 
     # n(t) n(t, C) N(t, NC)
@@ -168,13 +171,14 @@ def cal_H(df, group, past_mutations):
     # print(gains.head(10))
     return gains.idxmax()
 
-
+# calcualte the H(t) value
+# retun H(t)
 def entropy(P_c_t, P_nc_t):
     # H(t)
     with np.errstate(divide = 'ignore', invalid = 'ignore'):
-        return ( 
-            -np.where(P_c_t > 0, P_c_t * np.log2(P_c_t), 0)
-            -np.where(P_nc_t > 0, P_nc_t * np.log2(P_nc_t), 0)
+        return -( 
+            np.where(P_c_t > 0, P_c_t * np.log2(P_c_t), 0) +
+            np.where(P_nc_t > 0, P_nc_t * np.log2(P_nc_t), 0)
         )
 
 # calculate tp, fp, tn, fn for the tree made by F values
@@ -202,7 +206,7 @@ def F_stats(df, node):
         fn1 + fn2
     )
 
-# calculate tp, fp, tn, fn for the tree made by phi values
+# calculate tp, fp, tn, fn for the tree made by phi values also works for Gains values
 # return tp, fp, tn, fn
 def phi_stats_cal(df, node):
     #checking if in leaf node
@@ -322,6 +326,8 @@ def phi_build_tree(df, node, group, level):
 
     return node
 
+# build a tree using H as the value
+# return tree
 def H_build_tree(df, node, group, level):
     # checking to make sure not splitting an empty group
     # also returning if reached the wanted hight of the tree
@@ -358,11 +364,75 @@ def H_build_tree(df, node, group, level):
     # adding them to their parent node to build the tree
     node.add_child(child_with)
     node.add_child(child_without)
+
     # building the next layer of the tree
     H_build_tree(df, child_with, group_with, level - 1)
     H_build_tree(df, child_without, group_without, level - 1)
 
     return node
+
+# build a tree using H as the spilt but also using random forest classifier
+# return tree
+def forest_build_tree(df, node, samples_loc, level):
+    # checking to make sure not splitting an empty group
+    # also returning if reached the wanted hight of the tree
+    if level == 0 or len(samples_loc) <= 1:
+        samples = df.loc[samples_loc] # getting all samples in the group
+        total_C_samples = samples.iloc[:,0].astype(str).str.startswith("C").sum() # getting the total number of caner sample in the node
+        if total_C_samples >= len(samples_loc) - total_C_samples: # if there are more cancer samples then label node cancer
+            node.leaf_lable = "cancer"
+        else:
+            node.leaf_lable = "not cancer"
+        return node
+    # getting the random mutations to split from
+    mutations = random_mut(df)
+    top_mutation = cal_H(df, samples_loc, node.past_mutations, mutations)
+    # keeping track of what mutation was used for split
+    node.split = top_mutation
+    past_mutations = node.past_mutations.copy()
+    past_mutations.append(top_mutation)
+    # getting the samples and splitting them into with and without groups
+    samples = df.loc[samples_loc]
+    has_mutation = samples[top_mutation] == 1
+    group_with = has_mutation.index[has_mutation]
+    group_without = has_mutation.index[~has_mutation]
+    # creating children
+    child_with = Node("child_with", top_mutation, past_mutations)
+    child_without = Node("child_without", top_mutation, past_mutations)
+    # adding the childen to node
+    node.add_child(child_with)
+    node.add_child(child_without)
+    # creating the next level
+    forest_build_tree(df, child_with, group_with, level - 1)
+    forest_build_tree(df, child_without, group_without, level - 1)
+
+    return node
+
+# create the bootstrap and out of bag data
+# return the bootstrap data and the out of bag data
+def boot_strap_data(df):
+    n = len(df)
+    bsd = []
+    oob = []
+
+    for i in range(n):
+        bsd.append(random.randint(0, n - 1))
+    selected = set(bsd)
+    oob = [i for i in range(n) if i not in selected and i not in oob]
+
+    return bsd, oob
+
+# create a list of sqrt(n) random mutations
+# return random mutations
+def random_mut(df):
+    # calcualte the sqrt
+    num_mut = len(df.columns)
+    sqrt_mut = int(math.sqrt(num_mut))
+    # get list of all mutation and shuffle
+    mutations = list(df.columns)
+    random.shuffle(mutations)
+    # return the first sqrt(n) mutations
+    return mutations[:sqrt_mut]
 
 # allow for safe deviding
 def safe_dev(num, den):
@@ -434,16 +504,7 @@ def print_stats(f_stats, phi_stats, H_stats):
     for stat in f_value_stats:
         print(f"{stat:<20} {f_value_stats[stat]:<10.4f} {phi_value_stats[stat]:<10.4f} {H_value_stats[stat]:<10.4f}")
 
-def main():
-    f_stats = [0, 0, 0, 0]
-    phi_stats = [0, 0, 0, 0]
-    H_stats = [0, 0, 0, 0]
-
-    random.seed(72)
-    samples = []
-    #loading the cvs into the df
-    df = pd.read_csv('mutationu.csv')
-
+def before_forest(df):
     for i in range(len(df)):
         samples.append(i)
     random.shuffle(samples)
@@ -523,6 +584,80 @@ def main():
     H_group_A.print_mutation()
 
     print_stats(f_stats, phi_stats, H_stats)
+
+# create the forest of size n
+# return the forest
+def build_forest(df, size, bsd):
+    forest = []
+    for i in range(size):
+        tree = Node("root", None)
+        tree = forest_build_tree(df, tree, bsd, 2)
+        forest.append(tree)
+
+    return forest
+
+# return the vote for a single tree to be added later
+def vote(df, sample, node):
+    # checking if a the last node before a leaf node and if it is adding the sample to the node
+    if node.children == []:
+        if node.leaf_lable == "cancer":
+            return 'C'
+        else: 
+            retun 'N'
+    # the node isn't a leaf node and sending the sample down another layer
+    if df.loc[sample, node.split] == 1:
+        vote(df, sample, node.children[0])
+    else:
+        vote(df, sample, node.children[1])
+
+# calculate the stats of the forest
+# return the stats of the forest
+def forest_stats(df, forest, oob):
+    # sorrting all samples into the forest
+    for tree in forest:
+        for sample in oob:
+            sort(df, sample, tree)
+
+    for sample in oob:
+        total_cancer_vote = 0
+        total_no_cancer_vote = 0
+        for tree in forest:
+            if vote(df, sample, tree) == 'C':
+                total_cancer_vote += 1
+            else:
+                total_no_cancer_vote += 1
+        
+        if total_cancer_vote > total_no_cancer_vote: # has cancer
+            if 
+
+
+
+
+def main():
+    f_stats = [0, 0, 0, 0]
+    phi_stats = [0, 0, 0, 0]
+    H_stats = [0, 0, 0, 0]
+
+    random.seed(72)
+    samples = []
+    #loading the cvs into the df
+    df = pd.read_csv('mutationu.csv')
+
+    for i in range(len(df)):
+        samples.append(i)
+
+    bsd, oob = boot_strap_data(df)
+
+    forest = build_forest(df, 10, bsd)
+
+    # root = Node("root", None)
+
+    # root = forest_build_tree(df, root, samples, 2)
+    # for sample in samples:
+    #     sort(df, sample, root)
+    # root.print_samples()
+    # root.print_mutation()
+
 
 if __name__ == "__main__":
     main()
