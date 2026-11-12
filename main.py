@@ -603,13 +603,14 @@ def vote(df, sample, node):
         if node.leaf_lable == "cancer":
             return 'C'
         else: 
-            retun 'N'
+            return 'N'
     # the node isn't a leaf node and sending the sample down another layer
     if df.loc[sample, node.split] == 1:
-        vote(df, sample, node.children[0])
+        return vote(df, sample, node.children[0])
     else:
-        vote(df, sample, node.children[1])
+        return vote(df, sample, node.children[1])
 
+     
 # calculate the stats of the forest
 # return the stats of the forest
 def forest_stats(df, forest, oob):
@@ -618,20 +619,45 @@ def forest_stats(df, forest, oob):
         for sample in oob:
             sort(df, sample, tree)
 
+    tp, tn, fn, fp = 0, 0, 0, 0
+    # voting the the samples
     for sample in oob:
         total_cancer_vote = 0
         total_no_cancer_vote = 0
         for tree in forest:
-            if vote(df, sample, tree) == 'C':
+            tree_vote = vote(df, sample, tree)
+            if tree_vote == 'C':
                 total_cancer_vote += 1
             else:
                 total_no_cancer_vote += 1
         
-        if total_cancer_vote > total_no_cancer_vote: # has cancer
-            if 
+        if total_cancer_vote >= total_no_cancer_vote: # predict cancer
+            if df.iloc[sample, 0].startswith("C"): # has cancer
+                tp += 1
+            else: # doesn't have caner
+                fp += 1
+        else: # predict no cancer
+            if df.iloc[sample, 0].startswith("N"): # doesn't have cancer
+                tn += 1
+            else: # has cancer
+                fn += 1
+    stats_forest = evaluate(tp, fp, tn, fn)
 
+    print(f"{'Metric':<20} {'Forest':<10}")
+    for stat in stats_forest:
+        print(f"{stat:<20} {stats_forest[stat]:<10.4f}")
 
+def tree_stats(forest):
 
+    used_mutation = {}
+    # seeing the list of mutations used
+    for tree in forest:
+        used_mutation[tree.split] = used_mutation.get(tree.split, 0) + 1
+        used_mutation[tree.children[0].split] = used_mutation.get(tree.children[0].split, 0) + 1
+        used_mutation[tree.children[1].split] = used_mutation.get(tree.children[1].split, 0) + 1
+
+    for mutation, count in used_mutation.items():
+        print(f"Mutation: {mutation[:10]} Used {count} of times")
 
 def main():
     f_stats = [0, 0, 0, 0]
@@ -649,6 +675,12 @@ def main():
     bsd, oob = boot_strap_data(df)
 
     forest = build_forest(df, 10, bsd)
+
+    forest_stats(df, forest, oob)
+
+    print(f"Lenght of oob {len(oob)}")
+    print(oob)
+    tree_stats(forest)
 
     # root = Node("root", None)
 
