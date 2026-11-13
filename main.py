@@ -172,7 +172,7 @@ def cal_H(df, group, past_mutations, mutations = []):
     return gains.idxmax()
 
 # calcualte the H(t) value
-# retun H(t)
+# return H(t)
 def entropy(P_c_t, P_nc_t):
     # H(t)
     with np.errstate(divide = 'ignore', invalid = 'ignore'):
@@ -609,11 +609,10 @@ def vote(df, sample, node):
         return vote(df, sample, node.children[0])
     else:
         return vote(df, sample, node.children[1])
-
-     
+  
 # calculate the stats of the forest
 # return the stats of the forest
-def forest_stats(df, forest, oob):
+def forest_stats(df, forest, oob, print_vote = False):
     # sorrting all samples into the forest
     for tree in forest:
         for sample in oob:
@@ -630,7 +629,10 @@ def forest_stats(df, forest, oob):
                 total_cancer_vote += 1
             else:
                 total_no_cancer_vote += 1
-        
+
+        if print_vote:
+            print(f"For sample {df.iloc[sample, 0]}: {total_cancer_vote} trees voted cancer and {total_no_cancer_vote} tress voted no cancer")
+
         if total_cancer_vote >= total_no_cancer_vote: # predict cancer
             if df.iloc[sample, 0].startswith("C"): # has cancer
                 tp += 1
@@ -647,10 +649,12 @@ def forest_stats(df, forest, oob):
     for stat in stats_forest:
         print(f"{stat:<20} {stats_forest[stat]:<10.4f}")
 
+# add up all the times a mutation used
+# print the diction of all mutation used and number of times
 def tree_stats(forest):
 
     used_mutation = {}
-    # seeing the list of mutations used
+    # adding up how many times each mutation was used
     for tree in forest:
         used_mutation[tree.split] = used_mutation.get(tree.split, 0) + 1
         used_mutation[tree.children[0].split] = used_mutation.get(tree.children[0].split, 0) + 1
@@ -659,37 +663,44 @@ def tree_stats(forest):
     for mutation, count in used_mutation.items():
         print(f"Mutation: {mutation[:10]} Used {count} of times")
 
+    print(f"Total number of mutation used: {len(used_mutation)}")
+
 def main():
     f_stats = [0, 0, 0, 0]
     phi_stats = [0, 0, 0, 0]
     H_stats = [0, 0, 0, 0]
+
+    test_group = ["C1", "C10", "C15","NC5", "NC15"]
+    forest_size = 10
+    ave_oob = 0
 
     random.seed(72)
     samples = []
     #loading the cvs into the df
     df = pd.read_csv('mutationu.csv')
 
+    mask = df.iloc[:, 0].isin(test_group)
+    test_group_loc = np.flatnonzero(mask).tolist()
+
     for i in range(len(df)):
         samples.append(i)
 
-    bsd, oob = boot_strap_data(df)
+    # creating the forest with a different dataset the whole way 
+    forest = []
+    for i in range(forest_size):
+        bsd, oob = boot_strap_data(df)
+        # ave_oob += len(oob)
+        tree = Node("root", None)
+        tree = forest_build_tree(df, tree, bsd, 2)
+        forest.append(tree)
+        print("-"*10, "Tree", i + 1, "completed", "-"*10)
 
-    forest = build_forest(df, 10, bsd)
-
+    forest_stats(df, forest, test_group_loc, True)
+    print("-" * 10, "New data set", "-" * 10)
     forest_stats(df, forest, oob)
 
-    print(f"Lenght of oob {len(oob)}")
-    print(oob)
-    tree_stats(forest)
-
-    # root = Node("root", None)
-
-    # root = forest_build_tree(df, root, samples, 2)
-    # for sample in samples:
-    #     sort(df, sample, root)
-    # root.print_samples()
-    # root.print_mutation()
-
+    # tree_stats(forest)
+    # print(f"average oob size {(ave_oob/forest_size):>.2f}")
 
 if __name__ == "__main__":
     main()
